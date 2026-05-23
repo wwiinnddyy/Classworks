@@ -226,6 +226,11 @@
           <homework-template-card border />
         </v-tabs-window-item>
 
+        <v-tabs-window-item value="background">
+          <background-settings-card border />
+        </v-tabs-window-item>
+
+
         <v-tabs-window-item value="developer">
           <settings-card
             border
@@ -328,6 +333,7 @@ import KvDatabaseCard from "@/components/settings/cards/KvDatabaseCard.vue";
 import HitokotoSettings from "@/components/HitokotoSettings.vue";
 import NotificationSoundSettings from "@/components/settings/NotificationSoundSettings.vue";
 import NoiseSettingsCard from "@/components/settings/cards/NoiseSettingsCard.vue";
+import BackgroundSettingsCard from "@/components/settings/cards/BackgroundSettingsCard.vue";
 
 export default {
   name: "Settings",
@@ -352,6 +358,7 @@ export default {
     HitokotoSettings,
     NotificationSoundSettings,
     NoiseSettingsCard,
+    BackgroundSettingsCard,
   },
   setup() {
     const {mobile} = useDisplay();
@@ -488,6 +495,12 @@ export default {
           title: "随机点名",
           icon: "mdi-dice-multiple",
           value: "randomPicker",
+        },
+
+        {
+          title: "背景",
+          icon: "mdi-image",
+          value: "background",
         },
 
         {
