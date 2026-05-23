@@ -209,7 +209,7 @@ export default defineConfig({
           // UI 框架
           'vendor-vuetify': ['vuetify'],
           // 监控（异步加载，独立 chunk）
-          'vendor-sentry': ['@sentry/vue'],
+          // 'vendor-sentry': ['@sentry/vue'],
           // 实时通信
           'vendor-socket': ['socket.io-client'],
           // 通用工具库

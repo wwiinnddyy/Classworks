@@ -10,163 +10,133 @@ export const formatError = (message, code = "UNKNOWN_ERROR") => ({
   error: {code, message},
 });
 
+// Cache key prefix to avoid collision with kv-local mode data
+const CACHE_PREFIX = "_cache:";
+
+function isServerError(result) {
+  return result && result.success === false;
+}
+
+function isNetworkError(result) {
+  return isServerError(result) && result.error?.code === "NETWORK_ERROR";
+}
+
+// --- Sync manager: flushes queued writes when back online ---
+
+let _onlineHandler = null;
+let _flushing = false;
+
+async function flushSyncQueue() {
+  if (_flushing) return;
+  _flushing = true;
+  try {
+    const queueResult = await kvLocalProvider.getSyncQueue();
+    if (queueResult.success === false || !Array.isArray(queueResult) || queueResult.length === 0) {
+      return;
+    }
+    for (const entry of queueResult) {
+      try {
+        const result = await kvServerProvider.saveData(entry.key, entry.data);
+        if (result.success !== false) {
+          await kvLocalProvider.removeFromSyncQueue(entry.key);
+        }
+      } catch {
+        // If a single item fails, stop — will retry on next online event
+        break;
+      }
+    }
+  } finally {
+    _flushing = false;
+  }
+}
+
+export const syncManager = {
+  init() {
+    if (_onlineHandler) return;
+    _onlineHandler = () => flushSyncQueue();
+    window.addEventListener("online", _onlineHandler);
+    // Attempt flush on startup in case items were queued before last exit
+    if (navigator.onLine) flushSyncQueue();
+  },
+  destroy() {
+    if (_onlineHandler) {
+      window.removeEventListener("online", _onlineHandler);
+      _onlineHandler = null;
+    }
+  },
+  flushNow: flushSyncQueue,
+};
+
+// Helper: check if we should use the server provider
+function useServerProvider() {
+  const provider = getSetting("server.provider");
+  return provider === "kv-server" || provider === "classworkscloud";
+}
+
 // Main data provider with simplified API
 export default {
   // Provider API methods
   loadData: async (key) => {
-    const provider = getSetting("server.provider");
-    const useServer =
-      provider === "kv-server" || provider === "classworkscloud";
-
-    if (useServer) {
-      return kvServerProvider.loadData(key);
-    } else {
+    if (!useServerProvider()) {
       return kvLocalProvider.loadData(key);
     }
+
+    // Server mode: network-first with cache fallback
+    const result = await kvServerProvider.loadData(key);
+
+    if (!isNetworkError(result)) {
+      // Success or non-network error (e.g. NOT_FOUND) — cache on success
+      if (result.success !== false) {
+        kvLocalProvider.saveData(CACHE_PREFIX + key, result);
+      }
+      return result;
+    }
+
+    // Network error — try local cache
+    const cached = await kvLocalProvider.loadData(CACHE_PREFIX + key);
+    if (cached.success !== false) {
+      return {...cached, fromCache: true};
+    }
+
+    return result;
   },
 
   saveData: async (key, data) => {
-    const provider = getSetting("server.provider");
-    const useServer =
-      provider === "kv-server" || provider === "classworkscloud";
-
-    if (useServer) {
-      return kvServerProvider.saveData(key, data);
-    } else {
+    if (!useServerProvider()) {
       return kvLocalProvider.saveData(key, data);
     }
+
+    // Server mode: write-through — persist locally first
+    await kvLocalProvider.saveData(CACHE_PREFIX + key, data);
+
+    const result = await kvServerProvider.saveData(key, data);
+
+    if (result.success !== false) {
+      // Server save succeeded — remove from sync queue if present
+      await kvLocalProvider.removeFromSyncQueue(key);
+      return result;
+    }
+
+    // Server save failed — queue for later sync
+    await kvLocalProvider.addToSyncQueue({key, data, timestamp: Date.now()});
+    return {success: true, queuedForSync: true};
   },
 
-  /**
-   * 获取键名列表
-   * @param {Object} options - 查询选项
-   * @param {string} options.sortBy - 排序字段，默认为 "key"
-   * @param {string} options.sortDir - 排序方向，"asc" 或 "desc"，默认为 "asc"
-   * @param {number} options.limit - 每页返回的记录数，默认为 100
-   * @param {number} options.skip - 跳过的记录数，默认为 0
-   * @returns {Promise<Object>} 包含键名列表和分页信息的响应对象
-   *
-   * 使用示例:
-   * ```javascript
-   * // 获取前10个键名
-   * const result = await dataProvider.loadKeys({ limit: 10 });
-   * if (result.success !== false) {
-   *   console.log('键名列表:', result.keys);
-   *   console.log('总数:', result.total_rows);
-   * }
-   *
-   * // 获取第二页数据（跳过前10个）
-   * const page2 = await dataProvider.loadKeys({ limit: 10, skip: 10 });
-   *
-   * // 按键名降序排列
-   * const sorted = await dataProvider.loadKeys({ sortDir: 'desc' });
-   * ```
-   *
-   * 返回值格式:
-   * ```javascript
-   * {
-   *   keys: ["key1", "key2", "key3"],
-   *   total_rows: 150,
-   *   current_page: {
-   *     limit: 10,
-   *     skip: 0,
-   *     count: 10
-   *   },
-   *   load_more: "/api/kv/namespace/_keys?..." // 仅服务器模式
-   * }
-   * ```
-   */
   loadKeys: async (options = {}) => {
-    const provider = getSetting("server.provider");
-    const useServer =
-      provider === "kv-server" || provider === "classworkscloud";
-
-    if (useServer) {
-      return kvServerProvider.loadKeys(options);
-    } else {
+    if (!useServerProvider()) {
       return kvLocalProvider.loadKeys(options);
     }
+
+    const result = await kvServerProvider.loadKeys(options);
+
+    if (!isNetworkError(result)) {
+      return result;
+    }
+
+    // Network error — fall back to local cache keys
+    return kvLocalProvider.loadKeys(options);
   },
 
-  /**
-   * 获取键的云端访问地址，并处理本地到云端的数据迁移
-   *
-   * 功能说明:
-   * 1. 如果用户选择本地存储，则将本地键数据读取并存储到云端
-   * 2. 如果云端配置为空或错误则自动改成classworksCloudDefaults的配置
-   * 3. 根据网站验证情况（私有则添加token，公开或受保护则不需要）拼接键的get路径并返回
-   *
-   * @param {string} key - 要获取地址的键名
-   * @param {Object} options - 选项配置
-   * @param {boolean} options.migrateFromLocal - 是否从本地迁移数据到云端，默认为true
-   * @param {boolean} options.autoConfigureCloud - 是否自动配置云端默认设置，默认为true
-   * @returns {Promise<Object>} 包含键访问地址和操作结果的响应对象
-   *
-   * 使用示例:
-   * ```javascript
-   * import dataProvider from '@/utils/dataProvider';
-   *
-   * // 基本用法：获取键的云端地址并自动迁移本地数据
-   * const result = await dataProvider.getKeyCloudUrl('exam_configs');
-   * if (result.success) {
-   *   console.log('云端访问地址:', result.url);
-   *   console.log('是否已迁移数据:', result.migrated);
-   *   console.log('是否自动配置:', result.configured);
-   * } else {
-   *   console.error('获取失败:', result.error.message);
-   * }
-   *
-   * // 仅获取地址，不迁移数据
-   * const urlOnly = await dataProvider.getKeyCloudUrl('my_data', {
-   *   migrateFromLocal: false
-   * });
-   *
-   * // 不自动配置云端设置
-   * const noAutoConfig = await dataProvider.getKeyCloudUrl('my_data', {
-   *   autoConfigureCloud: false
-   * });
-   * ```
-   *
-   * 传入参数示例:
-   * ```javascript
-   * // 参数1: key (必需)
-   * 'exam_configs'  // 字符串类型的键名
-   *
-   * // 参数2: options (可选)
-   * {
-   *   migrateFromLocal: true,      // 是否迁移本地数据
-   *   autoConfigureCloud: true     // 是否自动配置云端
-   * }
-   * ```
-   *
-   * 返回值格式:
-   * ```javascript
-   * // 成功时返回:
-   * {
-   *   success: true,
-   *   url: "https://kv-service.houlang.cloud/device-uuid-123/exam_configs?token=abc123",  // 私有访问时包含token
-   *   migrated: true,              // 是否成功迁移了本地数据
-   *   configured: false            // 是否自动配置了云端设置
-   * }
-   *
-   * // 公开访问时返回:
-   * {
-   *   success: true,
-   *   url: "https://kv-service.houlang.cloud/device-uuid-123/exam_configs",  // 公开访问不包含token
-   *   migrated: false,
-   *   configured: true
-   * }
-   *
-   * // 失败时返回:
-   * {
-   *   success: false,
-   *   error: {
-   *     code: "CLOUD_URL_ERROR",
-   *     message: "获取键云端地址失败"
-   *   }
-   * }
-   * ```
-   */
   async getKeyCloudUrl(key, options = {}) {
     const {
       migrateFromLocal = true,
@@ -176,14 +146,14 @@ export default {
     try {
       const provider = getSetting("server.provider");
       let serverUrl;
-      
+
       // Use effective server URL for classworkscloud provider
       if (provider === "classworkscloud") {
         serverUrl = getEffectiveServerUrl();
       } else {
         serverUrl = getSetting("server.domain");
       }
-      
+
       let siteKey = getSetting("server.siteKey");
       const machineId = getSetting("device.uuid");
       let configured = false;

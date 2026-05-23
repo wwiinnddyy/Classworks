@@ -3,7 +3,7 @@ import {formatResponse, formatError} from "../dataProvider";
 
 // Database initialization for local storage
 const DB_NAME = "ClassworksDB";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const initDB = async () => {
   return openDB(DB_NAME, DB_VERSION, {
@@ -16,6 +16,11 @@ const initDB = async () => {
       // Add a system store for machine ID and other system settings
       if (!db.objectStoreNames.contains("system")) {
         db.createObjectStore("system");
+      }
+
+      // Add a sync queue store for offline write buffering
+      if (!db.objectStoreNames.contains("syncQueue")) {
+        db.createObjectStore("syncQueue");
       }
     },
   });
@@ -110,6 +115,44 @@ export const kvLocalProvider = {
       return formatResponse(responseData);
     } catch (error) {
       return formatError("获取本地键名列表失败：" + error.message);
+    }
+  },
+
+  // --- Sync queue operations for offline write buffering ---
+
+  async addToSyncQueue(entry) {
+    try {
+      const db = await initDB();
+      await db.put("syncQueue", JSON.stringify(entry), entry.key);
+      return formatResponse(true);
+    } catch (error) {
+      return formatError("添加同步队列失败：" + error);
+    }
+  },
+
+  async getSyncQueue() {
+    try {
+      const db = await initDB();
+      const keys = await db.getAllKeys("syncQueue");
+      const entries = [];
+      for (const key of keys) {
+        const raw = await db.get("syncQueue", key);
+        if (raw) entries.push(JSON.parse(raw));
+      }
+      entries.sort((a, b) => a.timestamp - b.timestamp);
+      return formatResponse(entries);
+    } catch (error) {
+      return formatError("获取同步队列失败：" + error);
+    }
+  },
+
+  async removeFromSyncQueue(key) {
+    try {
+      const db = await initDB();
+      await db.delete("syncQueue", key);
+      return formatResponse(true);
+    } catch (error) {
+      return formatError("删除同步队列项失败：" + error);
     }
   },
 };
