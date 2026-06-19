@@ -1,17 +1,30 @@
-import {kvLocalProvider} from "./providers/kvLocalProvider";
-import {kvServerProvider} from "./providers/kvServerProvider";
-import {getSetting, setSetting} from "./settings";
-import {getEffectiveServerUrl} from "./serverRotation";
+import { kvLocalProvider } from "./providers/kvLocalProvider";
+import { kvServerProvider } from "./providers/kvServerProvider";
+import { getSetting, setSetting } from "./settings";
+import { getEffectiveServerUrl } from "./serverRotation";
+import {
+  createEmptyMeta,
+  bumpClock,
+  mergeValues,
+} from "./crdtEngine";
+import {
+  getCacheEntry,
+  setCacheEntry,
+  CACHE_PREFIX,
+} from "./cacheManager";
+import {
+  initSmartSync,
+  destroySmartSync,
+  flushAll,
+  triggerSyncAfterSuccess,
+} from "./smartSyncManager";
 
 export const formatResponse = (data) => data;
 
 export const formatError = (message, code = "UNKNOWN_ERROR") => ({
   success: false,
-  error: {code, message},
+  error: { code, message },
 });
-
-// Cache key prefix to avoid collision with kv-local mode data
-const CACHE_PREFIX = "_cache:";
 
 function isServerError(result) {
   return result && result.success === false;
@@ -21,50 +34,32 @@ function isNetworkError(result) {
   return isServerError(result) && result.error?.code === "NETWORK_ERROR";
 }
 
-// --- Sync manager: flushes queued writes when back online ---
-
-let _onlineHandler = null;
-let _flushing = false;
-
-async function flushSyncQueue() {
-  if (_flushing) return;
-  _flushing = true;
-  try {
-    const queueResult = await kvLocalProvider.getSyncQueue();
-    if (queueResult.success === false || !Array.isArray(queueResult) || queueResult.length === 0) {
-      return;
-    }
-    for (const entry of queueResult) {
-      try {
-        const result = await kvServerProvider.saveData(entry.key, entry.data);
-        if (result.success !== false) {
-          await kvLocalProvider.removeFromSyncQueue(entry.key);
-        }
-      } catch {
-        // If a single item fails, stop — will retry on next online event
-        break;
-      }
-    }
-  } finally {
-    _flushing = false;
-  }
+/**
+ * 获取设备 ID，用于 CRDT 向量时钟节点标识
+ */
+function getDeviceId() {
+  return getSetting("device.uuid") || "unknown";
 }
 
+/**
+ * 规范化服务器返回的数据
+ * 某些端点 (如 Bearer token 认证) 返回 {value: [...]} 包装格式，
+ * 统一解包为原始数据，保证缓存比较的一致性。
+ * @param {*} data — 服务器返回的原始数据
+ * @returns {*} 规范化后的数据
+ */
+function normalizeServerData(data) {
+  if (data && typeof data === "object" && !Array.isArray(data) && "value" in data) {
+    return data.value;
+  }
+  return data;
+}
+
+// --- Sync manager: 向后兼容的导出 ---
 export const syncManager = {
-  init() {
-    if (_onlineHandler) return;
-    _onlineHandler = () => flushSyncQueue();
-    window.addEventListener("online", _onlineHandler);
-    // Attempt flush on startup in case items were queued before last exit
-    if (navigator.onLine) flushSyncQueue();
-  },
-  destroy() {
-    if (_onlineHandler) {
-      window.removeEventListener("online", _onlineHandler);
-      _onlineHandler = null;
-    }
-  },
-  flushNow: flushSyncQueue,
+  init: initSmartSync,
+  destroy: destroySmartSync,
+  flushNow: flushAll,
 };
 
 // Helper: check if we should use the server provider
@@ -81,21 +76,95 @@ export default {
       return kvLocalProvider.loadData(key);
     }
 
-    // Server mode: network-first with cache fallback
-    const result = await kvServerProvider.loadData(key);
+    // Server mode: network-first with CRDT-aware cache
+    const rawResult = await kvServerProvider.loadData(key);
+    // 规范化: 某些端点返回 {value: [...]} 包装格式，统一解包
+    const result = normalizeServerData(rawResult);
 
     if (!isNetworkError(result)) {
-      // Success or non-network error (e.g. NOT_FOUND) — cache on success
+      // 服务器返回成功或非网络错误 (如 NOT_FOUND)
       if (result.success !== false) {
-        kvLocalProvider.saveData(CACHE_PREFIX + key, result);
+        // 有效数据 — 与本地缓存进行 CRDT 比较
+        const cacheEntry = await getCacheEntry(key);
+        const deviceId = getDeviceId();
+
+        if (cacheEntry) {
+          const cachedData = normalizeServerData(cacheEntry.data);
+          const localDataStr = JSON.stringify(cachedData);
+          const serverDataStr = JSON.stringify(result);
+          const lastSyncedStr = JSON.stringify(normalizeServerData(cacheEntry.meta.lastSyncedData) ?? null);
+
+          if (serverDataStr === localDataStr) {
+            // 数据完全相同 — 无冲突，直接返回本地
+            return cachedData;
+          }
+
+          if (serverDataStr !== lastSyncedStr) {
+            // 服务器数据与上次同步快照不同 — 另一台设备写入了新数据
+            const localVc = cacheEntry.meta.vc || {};
+            const lastSyncedVc = cacheEntry.meta.lastSyncedVc || {};
+            const hasLocalChanges = (localVc[deviceId] || 0) > (lastSyncedVc[deviceId] || 0);
+
+            if (hasLocalChanges) {
+              // 本地也有未同步的更改 — CRDT 合并
+              const serverMeta = createEmptyMeta("server");
+              serverMeta.ts = Date.now();
+
+              const merged = mergeValues(
+                cachedData,
+                cacheEntry.meta,
+                result,
+                serverMeta,
+              );
+
+              await setCacheEntry(key, merged.data, merged.meta);
+              // 推送合并结果到服务器 (fire-and-forget)
+              kvServerProvider.saveData(key, merged.data);
+              return merged.data;
+            } else {
+              // 本地无未同步更改 — 采用服务器版本
+              const meta = createEmptyMeta(deviceId);
+              meta.ts = Date.now();
+              meta.lastSyncedData = result;
+              meta.lastSyncedTs = Date.now();
+              meta.lastSyncedVc = { ...meta.vc };
+              await setCacheEntry(key, result, meta);
+              return result;
+            }
+          } else {
+            // 服务器数据 === 上次同步快照，但 ≠ 本地数据
+            // 说明本地有未推送的更改，返回本地数据
+            return cachedData;
+          }
+        } else {
+          // 无本地缓存 — 首次获取
+          const meta = createEmptyMeta(deviceId);
+          meta.ts = Date.now();
+          meta.lastSyncedData = result;
+          meta.lastSyncedTs = Date.now();
+          meta.lastSyncedVc = { ...meta.vc };
+          await setCacheEntry(key, result, meta);
+          return result;
+        }
       }
       return result;
     }
 
-    // Network error — try local cache
-    const cached = await kvLocalProvider.loadData(CACHE_PREFIX + key);
-    if (cached.success !== false) {
-      return {...cached, fromCache: true};
+    // 网络错误 — 从缓存兜底
+    const cached = await getCacheEntry(key);
+    if (cached) {
+      const data = normalizeServerData(cached.data);
+      // 直接在数据对象上添加 fromCache 标记 (保持数组类型不变)
+      if (typeof data === "object" && data !== null) {
+        data.fromCache = true;
+      }
+      return data;
+    }
+
+    // 兼容旧格式缓存
+    const legacyCached = await kvLocalProvider.loadData(CACHE_PREFIX + key);
+    if (legacyCached.success !== false) {
+      return { ...legacyCached, fromCache: true };
     }
 
     return result;
@@ -106,20 +175,45 @@ export default {
       return kvLocalProvider.saveData(key, data);
     }
 
-    // Server mode: write-through — persist locally first
-    await kvLocalProvider.saveData(CACHE_PREFIX + key, data);
+    const deviceId = getDeviceId();
+
+    // 读取现有缓存条目获取当前向量时钟
+    const existingEntry = await getCacheEntry(key);
+    let meta;
+
+    if (existingEntry) {
+      meta = bumpClock(existingEntry.meta, deviceId);
+    } else {
+      meta = bumpClock(createEmptyMeta(deviceId), deviceId);
+    }
+
+    // Write-through: 先写入本地缓存 (含 CRDT metadata)
+    await setCacheEntry(key, data, meta);
 
     const result = await kvServerProvider.saveData(key, data);
 
     if (result.success !== false) {
-      // Server save succeeded — remove from sync queue if present
+      // 服务器保存成功 — 更新 lastSynced 快照
+      meta.lastSyncedData = data;
+      meta.lastSyncedTs = Date.now();
+      meta.lastSyncedVc = { ...meta.vc };
+      await setCacheEntry(key, data, meta);
       await kvLocalProvider.removeFromSyncQueue(key);
+
+      // 智能同步: 刷新其他队列中的更改
+      triggerSyncAfterSuccess();
+
       return result;
     }
 
-    // Server save failed — queue for later sync
-    await kvLocalProvider.addToSyncQueue({key, data, timestamp: Date.now()});
-    return {success: true, queuedForSync: true};
+    // 服务器保存失败 — 加入同步队列 (含 CRDT metadata)
+    await kvLocalProvider.addToSyncQueue({
+      key,
+      data,
+      timestamp: Date.now(),
+      meta,
+    });
+    return { success: true, queuedForSync: true };
   },
 
   loadKeys: async (options = {}) => {
@@ -140,7 +234,7 @@ export default {
   async getKeyCloudUrl(key, options = {}) {
     const {
       migrateFromLocal = true,
-      autoConfigureCloud = true
+      autoConfigureCloud = true,
     } = options;
 
     try {
@@ -217,26 +311,23 @@ export default {
       // 获取认证token
       const authtoken = getSetting("server.kvToken");
       // 构建云端访问URL
-      let url = `${serverUrl}/kv/${key}?token=${authtoken}`;
-
+      const url = `${serverUrl}/kv/${key}?token=${authtoken}`;
 
       return {
         success: true,
         url,
         migrated,
-        configured
+        configured,
       };
-
     } catch (error) {
-      console.error('获取键云端地址时出错:', error);
+      console.error("获取键云端地址时出错:", error);
       return formatError(
         error.message || "获取键云端地址失败",
-        "CLOUD_URL_ERROR"
+        "CLOUD_URL_ERROR",
       );
     }
   },
 };
-
 
 export const ErrorCodes = {
   NOT_FOUND: "数据不存在",

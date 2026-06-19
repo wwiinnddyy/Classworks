@@ -155,4 +155,32 @@ export const kvLocalProvider = {
       return formatError("删除同步队列项失败：" + error);
     }
   },
+
+  // --- Prefix-based operations for cache management ---
+
+  /**
+   * 删除指定前缀的所有键
+   * @param {string} prefix — 键名前缀
+   * @returns {Promise<number>} 删除的键数
+   */
+  async deleteByPrefix(prefix) {
+    try {
+      const db = await initDB();
+      const tx = db.transaction("kv", "readwrite");
+      const store = tx.objectStore("kv");
+      const allKeys = await store.getAllKeys();
+      let deleted = 0;
+      for (const key of allKeys) {
+        if (key.startsWith(prefix)) {
+          await store.delete(key);
+          deleted++;
+        }
+      }
+      await tx.done;
+      return deleted;
+    } catch (error) {
+      console.warn("kvLocalProvider.deleteByPrefix 失败:", error);
+      return 0;
+    }
+  },
 };
