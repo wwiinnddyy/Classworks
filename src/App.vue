@@ -72,6 +72,17 @@ const bgOverlayStyle = computed(() => ({
 
 let unwatchSettings = null;
 
+const onBeforeInstallPrompt = (e) => {
+  e.preventDefault();
+  window.deferredPwaPrompt = e;
+  window.dispatchEvent(new Event('pwa-prompt-ready'));
+};
+
+const onAppInstalled = () => {
+  window.deferredPwaPrompt = null;
+  window.dispatchEvent(new Event('pwa-installed'));
+};
+
 onMounted(() => {
   // 应用保存的主题设置
   const savedTheme = getSetting("theme.mode");
@@ -88,15 +99,14 @@ onMounted(() => {
     }
   });
 
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    window.deferredPwaPrompt = e;
-    window.dispatchEvent(new Event('pwa-prompt-ready'));
-  });
+  window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+  window.addEventListener('appinstalled', onAppInstalled);
 });
 
 onUnmounted(() => {
   if (unwatchSettings) unwatchSettings();
+  window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+  window.removeEventListener('appinstalled', onAppInstalled);
 });
 </script>
 <style>

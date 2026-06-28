@@ -38,12 +38,18 @@ export default defineConfig({
 
 
       workbox: {
-        globPatterns: ['*'],
+        globPatterns: [
+          '**/*.{js,css,html,ico,png,svg,webmanifest,txt,json,woff2,ttf,mp3}',
+        ],
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/socket\.io\//,
+        ],
         runtimeCaching: [
           {
             urlPattern: ({ url, sameOrigin }) => {
-              return sameOrigin && url.pathname.endsWith('/assets/');
+              return sameOrigin && url.pathname.startsWith('/assets/');
             },
             handler: 'CacheFirst',
             options: {
@@ -51,6 +57,22 @@ export default defineConfig({
               expiration: {
                 maxEntries: 200,
                 maxAgeSeconds: 60 * 60 * 24 * 60 // 60 天
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            urlPattern: ({ url, sameOrigin }) => {
+              return sameOrigin && url.pathname.startsWith('/sounds/');
+            },
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'sound-cache',
+              expiration: {
+                maxEntries: 80,
+                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 天
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -79,7 +101,7 @@ export default defineConfig({
               if (!sameOrigin) return false;
               const path = url.pathname;
               // 排除已经由其他规则处理的路径
-              return !(path.includes('/assets/') || path.includes('/pwa/'));
+              return !(path.includes('/assets/') || path.includes('/pwa/') || path.includes('/sounds/'));
             },
             handler: 'NetworkFirst',
             options: {
@@ -98,16 +120,27 @@ export default defineConfig({
         additionalManifestEntries: [],
         clientsClaim: true,
         skipWaiting: true,
-        importScripts: ['/sw-cache-manager.js']
+        importScripts: ['sw-cache-manager.js']
       },
       manifest: {
+        id: './',
         name: 'Classworks作业板',
         short_name: 'Classworks',
-        description: '记录，查看并同步作业',
+        description: '适用于班级大屏的作业板小工具，支持记录、查看并同步作业。',
         theme_color: '#212121',
         background_color: '#212121',
+        lang: 'zh-CN',
+        dir: 'ltr',
         display: 'standalone',
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
         start_url: './',
+        scope: './',
+        orientation: 'any',
+        categories: ['education', 'productivity', 'utilities'],
+        prefer_related_applications: false,
+        launch_handler: {
+          client_mode: ['navigate-existing', 'auto'],
+        },
         edge_side_panel: {
           default_path: './',
         },

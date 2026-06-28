@@ -361,15 +361,22 @@ const onDisplayModeChange = () => {
   refreshStates();
 };
 
+const onPwaInstalled = () => {
+  permissionStates.pwa.status = "granted";
+  refreshStates();
+};
+
 onMounted(() => {
   refreshStates();
   window.addEventListener('pwa-prompt-ready', onPromptReady);
+  window.addEventListener('pwa-installed', onPwaInstalled);
   displayModeMedia = window.matchMedia('(display-mode: standalone)');
   displayModeMedia.addEventListener('change', onDisplayModeChange);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pwa-prompt-ready', onPromptReady);
+  window.removeEventListener('pwa-installed', onPwaInstalled);
   if (displayModeMedia) {
     displayModeMedia.removeEventListener('change', onDisplayModeChange);
   }

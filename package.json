@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "build:store": "node scripts/generate-sound-list.js && vite build && node scripts/validate-pwa-build.js",
     "preview": "vite preview",
     "lint": "eslint . --fix",
+    "pwa:validate": "node scripts/validate-pwa-build.js",
     "prebuild": "node scripts/generate-sound-list.js"
   },
   "dependencies": {
