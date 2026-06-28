@@ -123,7 +123,7 @@ export default defineConfig({
         importScripts: ['sw-cache-manager.js']
       },
       manifest: {
-        id: './',
+        id: '7C24F2B3.ClassworksPWA',
         name: 'Classworks作业板',
         short_name: 'Classworks',
         description: '适用于班级大屏的作业板小工具，支持记录、查看并同步作业。',
@@ -132,18 +132,47 @@ export default defineConfig({
         lang: 'zh-CN',
         dir: 'ltr',
         display: 'standalone',
-        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui', 'fullscreen'],
         start_url: './',
         scope: './',
         orientation: 'any',
         categories: ['education', 'productivity', 'utilities'],
         prefer_related_applications: false,
         launch_handler: {
-          client_mode: ['navigate-existing', 'auto'],
+          client_mode: 'navigate-existing',
         },
-        edge_side_panel: {
-          default_path: './',
-        },
+        screenshots: [
+          {
+            src: './images/1.jpeg',
+            sizes: '1901x1080',
+            type: 'image/jpeg',
+            form_factor: 'wide',
+            label: 'Classworks 作业板主界面',
+          },
+          {
+            src: './images/2.jpeg',
+            sizes: '1901x1080',
+            type: 'image/jpeg',
+            form_factor: 'wide',
+            label: 'Classworks 设置与管理界面',
+          },
+        ],
+        file_handlers: [
+          {
+            action: './?file-handler=true',
+            accept: {
+              'application/octet-stream': ['.csb', '.csi'],
+              'application/x-classworks-backup': ['.csb'],
+              'application/x-classworks-install': ['.csi'],
+            },
+          },
+        ],
+        protocol_handlers: [
+          {
+            protocol: 'cs',
+            url: './?protocol=%s',
+          },
+        ],
         icons: [
           {
             src: './pwa/image/pwa-64x64.png',

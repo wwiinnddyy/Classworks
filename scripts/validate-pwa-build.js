@@ -40,6 +40,10 @@ if (!manifest) {
     }
   }
 
+  if (manifest.id !== '7C24F2B3.ClassworksPWA') {
+    fail('manifest.id 必须是 7C24F2B3.ClassworksPWA。');
+  }
+
   if (!['standalone', 'fullscreen', 'minimal-ui'].includes(manifest.display)) {
     fail('manifest.display 应为 standalone、fullscreen 或 minimal-ui。');
   }
@@ -55,6 +59,36 @@ if (!manifest) {
 
   if (!Array.isArray(manifest.categories) || manifest.categories.length === 0) {
     fail('manifest 缺少 categories，Microsoft Store/PWABuilder 会降低质量评分。');
+  }
+
+  const screenshots = Array.isArray(manifest.screenshots) ? manifest.screenshots : [];
+  if (screenshots.length === 0) {
+    fail('manifest 缺少 screenshots。');
+  }
+
+  for (const screenshot of screenshots) {
+    if (!screenshot.src || !screenshot.sizes || !screenshot.type) {
+      fail(`截图条目不完整: ${JSON.stringify(screenshot)}`);
+    } else if (!fileExistsFromManifest(screenshot.src)) {
+      fail(`截图文件不存在: ${screenshot.src}`);
+    }
+  }
+
+  const fileHandlers = Array.isArray(manifest.file_handlers) ? manifest.file_handlers : [];
+  const fileExtensions = new Set(
+    fileHandlers.flatMap((handler) => Object.values(handler.accept || {}).flat())
+  );
+  if (!fileExtensions.has('.csb') || !fileExtensions.has('.csi')) {
+    fail('manifest.file_handlers 必须允许 .csb 和 .csi。');
+  }
+
+  const protocolHandlers = Array.isArray(manifest.protocol_handlers) ? manifest.protocol_handlers : [];
+  if (!protocolHandlers.some((handler) => handler.protocol === 'cs' && handler.url?.includes('%s'))) {
+    fail('manifest.protocol_handlers 必须声明 cs:// 协议处理。');
+  }
+
+  if (manifest.edge_side_panel) {
+    fail('manifest 不应声明 edge_side_panel。');
   }
 }
 

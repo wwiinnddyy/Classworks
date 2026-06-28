@@ -4,7 +4,7 @@
 
 1. 在 GitHub Actions 手动运行 `PWA Store Build`。
 2. 确认 `production_url` 是最终公开 HTTPS 地址，例如 `https://cs.houlang.cloud/`。
-3. workflow 会执行 `pnpm run build:store`，生成并校验 `dist/manifest.webmanifest`、`dist/sw.js`、图标和 HTML PWA hint。
+3. workflow 会执行 `pnpm run build:store`，生成并校验 `dist/manifest.webmanifest`、`dist/sw.js`、图标、截图和 HTML PWA hint。
 4. 下载 `classworks-pwa-dist` 和 `microsoft-store-handoff` artifacts，作为 PWABuilder 或 Partner Center 提交前的构建记录。
 
 ## 提交到 Microsoft Store
