@@ -83,6 +83,18 @@
     >
       添加测试卡片
     </v-btn>
+    <v-btn
+      :disabled="uafExportDisabled"
+      :loading="uafExportLoading"
+      class="ml-2"
+      color="indigo"
+      prepend-icon="mdi-file-pdf-box"
+      size="large"
+      rounded="xl"
+      @click="$emit('export-uaf')"
+    >
+      导出 UAF
+    </v-btn>
   </div>
 
   <v-card
@@ -127,6 +139,8 @@ export default {
     isFullscreen: Boolean,
     showAntiScreenBurnCard: Boolean,
     showTestCardButton: Boolean,
+    uafExportDisabled: Boolean,
+    uafExportLoading: Boolean,
   },
   emits: [
     "upload",
@@ -134,6 +148,8 @@ export default {
     "open-random-picker",
     "toggle-fullscreen",
     "add-test-card",
+    "add-exam-card",
+    "export-uaf",
   ],
 };
 </script>

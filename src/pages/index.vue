@@ -200,12 +200,15 @@
         :is-fullscreen="state.isFullscreen"
         :show-anti-screen-burn-card="showAntiScreenBurnCard"
         :show-test-card-button="showTestCardButton"
+        :uaf-export-disabled="!hasExportableHomework"
+        :uaf-export-loading="loading.exportUaf"
         @upload="manualUpload"
         @show-sync-message="showSyncMessage"
         @open-random-picker="openRandomPicker"
         @toggle-fullscreen="toggleFullscreen"
         @add-test-card="addTestCard"
         @add-exam-card="showAddExamDialog = true"
+        @export-uaf="exportUaf"
       />
 
       <pwa-install-card />
@@ -561,6 +564,11 @@ import HomeActions from "@/components/home/HomeActions.vue";
 import FloatingICP from "@/components/FloatingICP.vue";
 import HitokotoCard from "@/components/HitokotoCard.vue";
 import HomeSkeleton from "@/components/common/HomeSkeleton.vue";
+import {
+  downloadUafDocument,
+  hasExportableHomework as containsExportableHomework,
+  UafExportValidationError,
+} from "@/utils/uafExport.js";
 
 // ===== 非首屏 / 条件渲染组件（异步懒加载）=====
 const MessageLog = defineAsyncComponent({
@@ -732,6 +740,7 @@ export default {
         upload: false,
         students: false,
         copyToToday: false,
+        exportUaf: false,
       },
       dataReady: false,
       debouncedUpload: null,
@@ -1084,6 +1093,9 @@ export default {
       return [...this.state.availableSubjects]
         .sort((a, b) => a.order - b.order)
         .map((subject) => subject.name);
+    },
+    hasExportableHomework() {
+      return containsExportableHomework(this.sortedItems);
     },
   },
 
@@ -2050,6 +2062,24 @@ export default {
         type: "custom",
       };
       this.state.synced = false;
+    },
+
+    async exportUaf() {
+      if (this.loading.exportUaf) return;
+      this.loading.exportUaf = true;
+      try {
+        const filename = await downloadUafDocument(this.sortedItems, this.state.dateString);
+        this.$message.success("导出成功", filename);
+      } catch (error) {
+        console.error("UAF export failed:", error);
+        if (error instanceof UafExportValidationError) {
+          this.$message.error("无法导出 UAF", error.issues.join("\n"));
+        } else {
+          this.$message.error("导出失败", error?.message || "无法生成 UAF PDF");
+        }
+      } finally {
+        this.loading.exportUaf = false;
+      }
     },
 
     showConfirmDialog() {
