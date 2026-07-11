@@ -83,18 +83,35 @@
     >
       添加测试卡片
     </v-btn>
-    <v-btn
-      :disabled="uafExportDisabled"
-      :loading="uafExportLoading"
-      class="ml-2"
-      color="indigo"
-      prepend-icon="mdi-file-pdf-box"
-      size="large"
-      rounded="xl"
-      @click="$emit('export-uaf')"
-    >
-      导出 UAF
-    </v-btn>
+    <v-menu location="bottom end">
+      <template #activator="{ props: menuProps }">
+        <v-btn
+          v-bind="menuProps"
+          :disabled="uafTransferLoading"
+          :loading="uafTransferLoading"
+          append-icon="mdi-menu-down"
+          class="ml-2"
+          color="indigo"
+          prepend-icon="mdi-swap-vertical-bold"
+          size="large"
+          rounded="xl"
+        >
+          作业导出导入
+        </v-btn>
+      </template>
+      <v-list density="comfortable">
+        <v-list-item
+          prepend-icon="mdi-file-export-outline"
+          title="导出 UAF"
+          @click="$emit('open-uaf-export')"
+        />
+        <v-list-item
+          prepend-icon="mdi-file-import-outline"
+          title="导入 UAF"
+          @click="$emit('open-uaf-import')"
+        />
+      </v-list>
+    </v-menu>
   </div>
 
   <v-card
@@ -139,8 +156,7 @@ export default {
     isFullscreen: Boolean,
     showAntiScreenBurnCard: Boolean,
     showTestCardButton: Boolean,
-    uafExportDisabled: Boolean,
-    uafExportLoading: Boolean,
+    uafTransferLoading: Boolean,
   },
   emits: [
     "upload",
@@ -149,7 +165,8 @@ export default {
     "toggle-fullscreen",
     "add-test-card",
     "add-exam-card",
-    "export-uaf",
+    "open-uaf-export",
+    "open-uaf-import",
   ],
 };
 </script>

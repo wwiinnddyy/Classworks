@@ -56374,13 +56374,14 @@ function drawPill(page, x, y, w, h, fill2, border) {
 // src/renderCard.ts
 var PAGE_WIDTH = 595.28;
 var PAGE_HEIGHT = 841.89;
-var PAGE_MARGIN = 36;
+var PAGE_MARGIN = 40;
 var WATERMARK_SPACE = 24;
 var COLUMN_GAP = 14;
 var ROW_GAP = 14;
 var CARD_WIDTH = (PAGE_WIDTH - PAGE_MARGIN * 2 - COLUMN_GAP) / 2;
-var CARD_PAD = 14;
-var HEADER_HEIGHT = 48;
+var CARD_PAD = 16;
+var HEADER_HEIGHT = 56;
+var CARD_RADIUS = 16;
 var CONTENT_FONT = 13.5;
 var CONTENT_LINE_HEIGHT = 19;
 var MAX_LINES_PER_FRAGMENT = 12;
@@ -56389,20 +56390,34 @@ var MIN_CARD_HEIGHT = 140;
 var SUBJECT_FONT = 17;
 var DATE_FONT = 9.5;
 var TAG_FONT = 9.5;
-var WATERMARK_FONT = 9;
-var COLORS = {
-  pageBg: rgb(248 / 255, 250 / 255, 252 / 255),
-  shadow: rgb(203 / 255, 213 / 255, 225 / 255),
-  border: rgb(226 / 255, 232 / 255, 240 / 255),
-  card: rgb(1, 1, 1),
-  header: rgb(37 / 255, 99 / 255, 235 / 255),
-  headerText: rgb(1, 1, 1),
-  dateText: rgb(219 / 255, 234 / 255, 254 / 255),
-  content: rgb(15 / 255, 23 / 255, 42 / 255),
-  chip: rgb(224 / 255, 231 / 255, 255 / 255),
-  chipText: rgb(55 / 255, 48 / 255, 163 / 255),
-  muted: rgb(100 / 255, 116 / 255, 139 / 255),
-  watermark: rgb(148 / 255, 163 / 255, 184 / 255)
+var WATERMARK_FONT = 10;
+var DEFAULT_COLORS = {
+  pageBg: rgb(255 / 255, 251 / 255, 254 / 255),
+  shadow: rgb(0 / 255, 0 / 255, 0 / 255),
+  border: rgb(121 / 255, 116 / 255, 126 / 255),
+  card: rgb(255 / 255, 251 / 255, 254 / 255),
+  header: rgb(24 / 255, 103 / 255, 192 / 255),
+  headerText: rgb(29 / 255, 27 / 255, 32 / 255),
+  dateText: rgb(73 / 255, 69 / 255, 79 / 255),
+  content: rgb(29 / 255, 27 / 255, 32 / 255),
+  chip: rgb(232 / 255, 222 / 255, 248 / 255),
+  chipText: rgb(29 / 255, 25 / 255, 43 / 255),
+  muted: rgb(73 / 255, 69 / 255, 79 / 255),
+  watermark: rgb(73 / 255, 69 / 255, 79 / 255)
+};
+var CLASSWORKS_DARK_COLORS = {
+  pageBg: rgb(20 / 255, 18 / 255, 24 / 255),
+  shadow: rgb(0 / 255, 0 / 255, 0 / 255),
+  border: rgb(73 / 255, 69 / 255, 79 / 255),
+  card: rgb(29 / 255, 27 / 255, 32 / 255),
+  header: rgb(24 / 255, 103 / 255, 192 / 255),
+  headerText: rgb(230 / 255, 225 / 255, 229 / 255),
+  dateText: rgb(202 / 255, 196 / 255, 208 / 255),
+  content: rgb(230 / 255, 225 / 255, 229 / 255),
+  chip: rgb(74 / 255, 68 / 255, 88 / 255),
+  chipText: rgb(232 / 255, 222 / 255, 248 / 255),
+  muted: rgb(202 / 255, 196 / 255, 208 / 255),
+  watermark: rgb(255 / 255, 255 / 255, 255 / 255)
 };
 function widthOf(font, text, size) {
   return font.widthOfTextAtSize(text, size);
@@ -56467,19 +56482,18 @@ function formatDate(date, mode) {
   const parsed = new Date(date);
   return Number.isNaN(parsed.getTime()) ? date : `${parsed.getFullYear()}\u5E74${parsed.getMonth() + 1}\u6708${parsed.getDate()}\u65E5`;
 }
-function drawPageBackground(page, font, canRenderCjk) {
-  page.drawRectangle({ x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT, color: COLORS.pageBg });
+function drawPageBackground(page, font, canRenderCjk, colors) {
+  page.drawRectangle({ x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT, color: colors.pageBg });
   const watermark = canRenderCjk ? "\u4F7F\u7528 UAF v1.0 \u5BFC\u51FA" : "Exported with UAF v1.0";
   page.drawText(watermark, {
     x: PAGE_WIDTH - PAGE_MARGIN - widthOf(font, watermark, WATERMARK_FONT),
     y: PAGE_MARGIN - 4,
     size: WATERMARK_FONT,
     font,
-    color: COLORS.watermark,
-    opacity: 0.65
+    color: colors.watermark
   });
 }
-function drawTags(page, tags, x, y, font) {
+function drawTags(page, tags, x, y, font, colors) {
   if (tags.length === 0) {
     page.drawText("", { x, y, font, size: TAG_FONT });
     return;
@@ -56490,20 +56504,17 @@ function drawTags(page, tags, x, y, font) {
     const label = ellipsize(tag2, font, TAG_FONT, CARD_WIDTH - CARD_PAD * 2 - 16);
     const width = Math.min(widthOf(font, label, TAG_FONT) + 16, CARD_WIDTH - CARD_PAD * 2);
     if (cursor + width > maxX) break;
-    drawPill(page, cursor, y, width, 19, COLORS.chip);
-    page.drawText(label, { x: cursor + 8, y: y + 5.2, size: TAG_FONT, font, color: COLORS.chipText });
+    drawPill(page, cursor, y, width, 19, colors.chip);
+    page.drawText(label, { x: cursor + 8, y: y + 5.2, size: TAG_FONT, font, color: colors.chipText });
     cursor += width + 6;
   }
 }
-function drawFragment(page, fragment, x, top, font, fontBold, dateDisplay, canRenderCjk) {
+function drawFragment(page, fragment, x, top, font, fontBold, dateDisplay, canRenderCjk, colors) {
   const y = top - fragment.height;
-  drawRoundedRect(page, x + 3, y - 3, CARD_WIDTH, fragment.height, 12, COLORS.shadow);
-  drawRoundedRect(page, x, y, CARD_WIDTH, fragment.height, 12, COLORS.card, {
-    color: COLORS.border,
+  drawRoundedRect(page, x, y, CARD_WIDTH, fragment.height, CARD_RADIUS, colors.card, {
+    color: colors.border,
     width: 1
   });
-  drawRoundedRect(page, x, top - HEADER_HEIGHT, CARD_WIDTH, HEADER_HEIGHT, 12, COLORS.header);
-  page.drawRectangle({ x, y: top - HEADER_HEIGHT, width: CARD_WIDTH, height: 12, color: COLORS.header });
   const continuation = fragment.continuation ? canRenderCjk ? "\uFF08\u7EED\uFF09" : " (cont.)" : "";
   const subject = ellipsize(
     `${fragment.assignment.subject}${continuation}`,
@@ -56513,39 +56524,39 @@ function drawFragment(page, fragment, x, top, font, fontBold, dateDisplay, canRe
   );
   page.drawText(subject, {
     x: x + CARD_PAD,
-    y: top - 23,
+    y: top - CARD_PAD - 20,
     size: SUBJECT_FONT,
     font: fontBold,
-    color: COLORS.headerText
+    color: colors.headerText
   });
   page.drawText(formatDate(fragment.assignment.date, dateDisplay), {
     x: x + CARD_PAD,
-    y: top - 39,
+    y: top - CARD_PAD - 40,
     size: DATE_FONT,
     font,
-    color: COLORS.dateText
+    color: colors.dateText
   });
-  let lineY = top - HEADER_HEIGHT - 24;
+  let lineY = top - CARD_PAD - HEADER_HEIGHT - 12;
   for (const line of fragment.lines) {
     page.drawText(line || " ", {
       x: x + CARD_PAD,
       y: lineY,
       size: CONTENT_FONT,
       font,
-      color: COLORS.content
+      color: colors.content
     });
     lineY -= CONTENT_LINE_HEIGHT;
   }
   if (fragment.showTags) {
-    drawTags(page, fragment.assignment.tags, x + CARD_PAD, y + 13, font);
+    drawTags(page, fragment.assignment.tags, x + CARD_PAD, y + CARD_PAD + 5, font, colors);
   } else {
     const continued = canRenderCjk ? "\u6B63\u6587\u4E0B\u9875\u7EE7\u7EED" : "Continued on next card";
     page.drawText(continued, {
       x: x + CARD_PAD,
-      y: y + 15,
+      y: y + CARD_PAD + 8,
       size: TAG_FONT,
       font,
-      color: COLORS.muted
+      color: colors.muted
     });
   }
 }
@@ -56553,6 +56564,7 @@ function renderAssignmentDocument(pdfDoc, document, font, fontBold, options = {}
   const fragments = createFragments(document, font);
   const pages = [];
   const dateDisplay = options.dateDisplay ?? "zh";
+  const colors = options.theme === "classworks-dark" ? CLASSWORKS_DARK_COLORS : DEFAULT_COLORS;
   const pageBottom = PAGE_MARGIN + WATERMARK_SPACE;
   let page;
   let cursorTop = PAGE_HEIGHT - PAGE_MARGIN;
@@ -56562,7 +56574,7 @@ function renderAssignmentDocument(pdfDoc, document, font, fontBold, options = {}
     if (!page || cursorTop - rowHeight < pageBottom) {
       page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
       pages.push(page);
-      drawPageBackground(page, font, options.canRenderCjk !== false);
+      drawPageBackground(page, font, options.canRenderCjk !== false, colors);
       cursorTop = PAGE_HEIGHT - PAGE_MARGIN;
     }
     pair.forEach((fragment, column) => {
@@ -56574,7 +56586,8 @@ function renderAssignmentDocument(pdfDoc, document, font, fontBold, options = {}
         font,
         fontBold,
         dateDisplay,
-        options.canRenderCjk !== false
+        options.canRenderCjk !== false,
+        colors
       );
     });
     cursorTop -= rowHeight + ROW_GAP;
@@ -56597,7 +56610,8 @@ async function createUafPdfWithFont(document, options = {}) {
   }
   renderAssignmentDocument(pdfDoc, validated, font, font, {
     dateDisplay: options.useStandardFont ? "iso" : "zh",
-    canRenderCjk: !options.useStandardFont
+    canRenderCjk: !options.useStandardFont,
+    theme: options.theme
   });
   await pdfDoc.attach(csvBytes, UAF_PAYLOAD_FILENAME, {
     mimeType: "text/csv",
@@ -56833,7 +56847,11 @@ async function createUafPdf(document, options = {}) {
   const fontBytes = await loadBrowserFont(options);
   const wasmUrl = options.wasmUrl ?? new URL("../assets/hb-subset.wasm", import.meta.url);
   const subset = await subsetFontInBrowser(fontBytes, collectDocumentText(document), wasmUrl);
-  return createUafPdfWithFont(document, { fontBytes: subset, subsetFont: false });
+  return createUafPdfWithFont(document, {
+    fontBytes: subset,
+    subsetFont: false,
+    theme: options.theme
+  });
 }
 async function createUafPdfFromCsv(csv, options = {}) {
   return createUafPdf(parsePayload(csv), options);
