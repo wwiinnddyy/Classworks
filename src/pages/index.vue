@@ -200,6 +200,7 @@
         :is-fullscreen="state.isFullscreen"
         :show-anti-screen-burn-card="showAntiScreenBurnCard"
         :show-test-card-button="showTestCardButton"
+        :show-uaf-transfer-button="showUafTransferButton"
         :uaf-transfer-loading="loading.exportUaf"
         @upload="manualUpload"
         @show-sync-message="showSyncMessage"
@@ -486,9 +487,10 @@
   >
     <v-card>
       <v-card-title class="text-h6">
-        预览考试看板
+        考试看板
       </v-card-title>
       <v-card-text>
+        <v-list><v-list-item active color="green" @click="$router.push('/examschedule')" append-icon="mdi-arrow-right">打开考试看板</v-list-item></v-list>
         <v-list v-if="examStore.examList.length > 0">
           <v-list-item
             v-for="exam in examStore.examList"
@@ -1067,6 +1069,9 @@ export default {
     },
     showTestCardButton() {
       return getSetting("developer.enabled");
+    },
+    showUafTransferButton() {
+      return getSetting("display.showUafTransfer");
     },
     shouldShowInit() {
       const provider = getSetting("server.provider");
@@ -2417,6 +2422,7 @@ export default {
         cardHoverEffect: "卡片悬浮效果",
         enhancedTouchMode: "增强触摸模式",
         showAntiScreenBurnCard: "防烧屏卡片",
+        showUafTransfer: "UAF导入导出",
 
         mode: "主题模式",
 
