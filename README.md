@@ -38,6 +38,12 @@ pnpm run dev
 pnpm run build
 ```
 
+## 🖥️ 阑山桌面组件
+
+Classworks 的阑山桌面组件由独立仓库 [Classworks4LanDesktop](https://github.com/wwiinnddyy/Classworks4LanDesktop) 维护。组件与网页端共用 `classworks-data-YYYYMMDD` 数据和 KV App Token，不需要复制一套作业数据。
+
+数据键、鉴权头和兼容约定见 [阑山桌面插件集成契约](docs/LAN_DESKTOP_PLUGIN.md)。
+
 
 ## 🤝 参与贡献
 
